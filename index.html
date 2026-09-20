@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Máy tính xác suất thống kê</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eaf0f5;--card:#fff;--ink:#14202e;--mut:#5b6b7c;--acc:#0f6b8f;--bar:#7fb3cc;--hot:#c2410c;--line:#d3dce5;--ok:#15803d;--warn:#b45309;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101820;--card:#18232e;--ink:#e6edf3;--mut:#93a4b5;--acc:#5cc0e6;--bar:#3b6f88;--hot:#fb923c;--line:#2a3846;--ok:#4ade80;--warn:#fbbf24}}
+:root[data-theme="dark"]{--bg:#101820;--card:#18232e;--ink:#e6edf3;--mut:#93a4b5;--acc:#5cc0e6;--bar:#3b6f88;--hot:#fb923c;--line:#2a3846;--ok:#4ade80;--warn:#fbbf24}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:720px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:1.5rem;line-height:1.25;margin:0 0 6px}
+h2{font-size:1.05rem;margin:0 0 10px}
+.sub{color:var(--mut);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+label{display:block;font-weight:600;font-size:.9rem;margin-bottom:6px}
+textarea,input{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px}
+textarea{min-height:120px;resize:vertical}
+.row{display:flex;gap:12px}.row>div{flex:1}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+button{font:inherit;font-weight:600;border-radius:8px;padding:10px 16px;border:1px solid var(--acc);cursor:pointer}
+.pri{background:var(--acc);color:#fff}.sec{background:transparent;color:var(--acc)}
+:root:not([data-theme="light"]) .pri{color:#06202b}
+button:focus-visible,textarea:focus-visible,input:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.verdict{border-left:5px solid var(--ok);padding:10px 14px;background:var(--bg);border-radius:0 8px 8px 0;margin-bottom:12px}
+.verdict.bad{border-color:var(--warn)}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:12px 0}
+.stats div{background:var(--bg);border-radius:8px;padding:8px 12px}
+.stats b{display:block;font-size:1.15rem}.stats span{color:var(--mut);font-size:.82rem}
+.scroll{overflow-x:auto}
+.chart{position:relative;display:flex;align-items:flex-end;gap:2px;height:150px;min-width:100%;border-bottom:1px solid var(--line)}
+.chart i{flex:1;min-width:5px;background:var(--bar);border-radius:2px 2px 0 0}
+.chart i.hot{background:var(--hot)}
+.exp{position:absolute;left:0;right:0;border-top:2px dashed var(--acc);pointer-events:none}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th,td{text-align:left;padding:6px 4px;border-bottom:1px solid var(--line)}
+th{color:var(--mut);font-weight:600}
+.note{color:var(--mut);font-size:.88rem}
+[hidden]{display:none!important}
+select{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px}
+select:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+input[type=file]{padding:8px}
+.field{margin-top:12px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip,.chk{display:flex;align-items:center;gap:6px;font-weight:400;margin:0}
+.chip{border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:.9rem}
+.chip input,.chk input{width:auto}
+</style>
+</head>
+<body>
+<main>
+<h1>Máy tính xác suất thống kê</h1>
+<p class="sub">Dán dữ liệu các kỳ trước, công cụ sẽ đo tần suất và kiểm định xem có số nào thực sự có xác suất cao hơn hay chỉ là dao động ngẫu nhiên.</p>
+
+<div class="card">
+  <h2>Nhập từ file Excel hoặc CSV</h2>
+  <label for="file">Chọn file (.xlsx, .xls, .csv)</label>
+  <input id="file" type="file" accept=".xlsx,.xls,.csv">
+  <p class="note" id="impmsg">Mỗi dòng là một ngày. Ngày cần viết theo dạng ngày/tháng/năm.</p>
+  <div id="imp" hidden>
+    <div class="field" id="sheetrow"><label for="sheet">Trang tính</label><select id="sheet"></select></div>
+    <label class="chk field"><input type="checkbox" id="hdr" checked> Dòng đầu là tiêu đề</label>
+    <div class="field"><label for="dcol">Cột ngày</label><select id="dcol"></select></div>
+    <div class="field"><label>Cột chứa số</label><div class="chips" id="chips"></div></div>
+    <div class="row field" id="daterow"><div><label for="d1">Từ ngày</label><input id="d1" type="date"></div><div><label for="d2">Đến ngày</label><input id="d2" type="date"></div></div>
+    <p class="note" id="sum"></p>
+    <div class="scroll"><table id="prev"></table></div>
+  </div>
+</div>
+
+<div class="card">
+  <label for="data">Dữ liệu (dấu cách hoặc dấu phẩy giữa các số; xuống dòng để tách từng ngày)</label>
+  <textarea id="data" placeholder="Ví dụ: 07 45 12 88 03 45 ..."></textarea>
+  <div class="row" style="margin-top:12px">
+    <div><label for="min">Số nhỏ nhất</label><input id="min" type="number" value="0"></div>
+    <div><label for="max">Số lớn nhất</label><input id="max" type="number" value="99"></div>
+  </div>
+  <div class="field"><label for="mode">Cách lấy số</label><select id="mode"><option value="last2">Lấy 2 chữ số cuối</option><option value="full">Lấy nguyên giá trị</option></select></div>
+  <div class="field"><label for="cm">Cách đếm</label><select id="cm"><option value="all">Mọi lần xuất hiện (số trùng tính nhiều lần)</option><option value="day">Số ngày có xuất hiện (mỗi dòng là một ngày)</option></select></div>
+  <div class="field"><label for="topn">Số chọn mỗi ngày (khi kiểm chứng)</label><input id="topn" type="number" value="10" min="1" max="50"></div>
+  <div class="btns">
+    <button class="pri" id="go">Phân tích</button>
+    <button class="sec" id="bt">Kiểm chứng các phương pháp</button>
+    <button class="sec" id="demo">Tạo thử 30 ngày ngẫu nhiên (27 số/ngày)</button>
+  </div>
+</div>
+
+<div id="out"></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+function lgamma(z){const c=[76.18009172947146,-86.50532032941677,24.01409824083091,-1.231739572450155,0.1208650973866179e-2,-0.5395239384953e-5];let y=z,t=z+5.5;t-=(z+.5)*Math.log(t);let s=1.000000000190015;for(let j=0;j<6;j++)s+=c[j]/++y;return -t+Math.log(2.5066282746310005*s/z)}
+function gammaQ(a,x){
+  if(x<=0)return 1;const g=lgamma(a);
+  if(x<a+1){let ap=a,sum=1/a,del=sum;for(let n=0;n<500;n++){ap++;del*=x/ap;sum+=del;if(Math.abs(del)<Math.abs(sum)*1e-12)break}return 1-sum*Math.exp(-x+a*Math.log(x)-g)}
+  let b=x+1-a,c=1e300,d=1/b,h=d;
+  for(let i=1;i<500;i++){const an=-i*(i-a);b+=2;d=an*d+b;if(Math.abs(d)<1e-300)d=1e-300;c=b+an/c;if(Math.abs(c)<1e-300)c=1e-300;d=1/d;const dl=d*c;h*=dl;if(Math.abs(dl-1)<1e-12)break}
+  return Math.exp(-x+a*Math.log(x)-g)*h;
+}
+function wilson(k,n){const z=1.96,p=k/n,d=1+z*z/n,c=p+z*z/(2*n),m=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n));return[(c-m)/d,(c+m)/d]}
+const pct=x=>(x*100).toFixed(2)+"%";
+const pad=(v,w)=>String(v).padStart(w,"0");
+
+function analyze(){
+  const lo=parseInt($("min").value),hi=parseInt($("max").value);
+  const out=$("out");
+  if(!(hi>lo)){out.innerHTML='<div class="card">Số lớn nhất phải lớn hơn số nhỏ nhất.</div>';return}
+  const K=hi-lo+1,w=String(hi).length;
+  if($("cm").value==="day")return analyzeDays(lo,hi);
+  const all=$("data").value.split(/[^\d]+/).filter(Boolean).map(t=>$("mode").value==="last2"?Number(t.slice(-2)):Number(t));
+  const vals=all.filter(v=>v>=lo&&v<=hi),skipped=all.length-vals.length;
+  const N=vals.length;
+  if(N<2){out.innerHTML='<div class="card">Chưa đủ dữ liệu hợp lệ. Hãy dán thêm số trong khoảng đã chọn.</div>';return}
+  const cnt=Array(K).fill(0);vals.forEach(v=>cnt[v-lo]++);
+  const E=N/K,chi=cnt.reduce((s,o)=>s+(o-E)**2/E,0),df=K-1,p=gammaQ(df/2,chi/2);
+  const order=cnt.map((c,i)=>i).sort((a,b)=>cnt[b]-cnt[a]||a-b);
+  const max=Math.max(...cnt);
+  const uniform=p>=0.05;
+  let v=uniform
+    ?`<div class="verdict"><b>Không có bằng chứng số nào có lợi thế.</b><br>Chênh lệch tần suất nằm trong mức dao động ngẫu nhiên (p = ${p.toFixed(3)}). Mỗi số có xác suất xấp xỉ 1/${K} = ${pct(1/K)} ở mỗi kỳ.</div>`
+    :`<div class="verdict bad"><b>Phân phối lệch so với đều (p = ${p.toFixed(4)}).</b><br>Có thể do nguồn dữ liệu không thuần ngẫu nhiên, hoặc do lỗi nhập liệu. Nên kiểm tra lại dữ liệu và thử với mẫu lớn hơn trước khi kết luận.</div>`;
+  let warn=N<5*K?`<p class="note">Lưu ý: mẫu nhỏ (N &lt; 5×${K}) nên kiểm định kém tin cậy. Cần thêm dữ liệu.</p>`:"";
+  if(skipped)warn+=`<p class="note">Đã bỏ qua ${skipped} giá trị nằm ngoài khoảng ${lo}–${hi}.</p>`;
+  const bars=cnt.map((c,i)=>`<i class="${order.slice(0,3).includes(i)&&c>E?"hot":""}" style="height:${max?c/max*100:0}%" title="${pad(i+lo,w)}: ${c}"></i>`).join("");
+  const row=i=>{const[a,b]=wilson(cnt[i],N);return`<tr><td><b>${pad(i+lo,w)}</b></td><td>${cnt[i]}</td><td>${pct(cnt[i]/N)}</td><td>${pct(a)} – ${pct(b)}</td></tr>`};
+  const head='<tr><th>Số</th><th>Lần</th><th>Tần suất</th><th>Khoảng tin cậy 95%</th></tr>';
+  out.innerHTML=`
+  <div class="card"><h2>Kết luận</h2>${v}
+    <div class="stats">
+      <div><b>${N}</b><span>số kỳ hợp lệ</span></div>
+      <div><b>${E.toFixed(2)}</b><span>số lần kỳ vọng mỗi số</span></div>
+      <div><b>${chi.toFixed(1)}</b><span>thống kê χ² (bậc tự do ${df})</span></div>
+      <div><b>${p.toFixed(4)}</b><span>giá trị p</span></div>
+    </div>${warn}</div>
+  <div class="card"><h2>Tần suất từng số</h2>
+    <div class="scroll"><div class="chart" style="min-width:${Math.max(0,K*7)}px">${bars}<span class="exp" style="bottom:${max?E/max*100:0}%"></span></div></div>
+    <p class="note">Đường nét đứt là mức kỳ vọng nếu mọi số đều như nhau. Cột cam là 3 số xuất hiện nhiều nhất.</p></div>
+  <div class="card"><h2>5 số xuất hiện nhiều nhất</h2><div class="scroll"><table>${head}${order.slice(0,5).map(row).join("")}</table></div></div>
+  <div class="card"><h2>5 số xuất hiện ít nhất</h2><div class="scroll"><table>${head}${order.slice(-5).reverse().map(row).join("")}</table></div>
+    <p class="note">Khoảng tin cậy của các số đều chứa mức 1/${K} (${pct(1/K)}) thì chưa thể nói số đó khác biệt. Số “nóng” hay “lạnh” trong quá khứ không làm kỳ sau dễ ra hơn nếu các kỳ độc lập.</p></div>`;
+}
+$("go").onclick=analyze;
+
+/* Nhập từ Excel/CSV */
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const colName=i=>{let s="",n=i;do{s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26)-1}while(n>=0);return s};
+const dkey=(y,m,d)=>y+"-"+pad(m,2)+"-"+pad(d,2);
+function parseDate(v,serialOk){
+  if(v instanceof Date&&!isNaN(v)){const t=new Date(v.getTime()+432e5);return dkey(t.getFullYear(),t.getMonth()+1,t.getDate())}
+  if(typeof v==="string"){
+    const s=v.trim();let m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+    if(m)return dkey(+m[3],+m[2],+m[1]);
+    m=s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+    if(m)return dkey(+m[1],+m[2],+m[3]);
+  }else if(serialOk&&typeof v==="number"&&v>20000&&v<80000){
+    const t=new Date(Math.round((v-25569)*864e5));return dkey(t.getUTCFullYear(),t.getUTCMonth()+1,t.getUTCDate());
+  }
+  return null;
+}
+let WB=null,ROWS=[],NAMES=[];
+$("file").onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  if(typeof XLSX==="undefined"){$("impmsg").textContent="Không tải được thư viện đọc Excel. Kiểm tra kết nối mạng rồi thử lại.";return}
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{WB=XLSX.read(new Uint8Array(ev.target.result),{type:"array",cellDates:true,raw:true})}
+    catch(err){$("impmsg").textContent="Không đọc được file. Hãy dùng .xlsx, .xls hoặc .csv.";return}
+    const ns=WB.SheetNames.length;
+    $("sheet").innerHTML=(ns>1?'<option value="all">Tất cả trang tính</option>':'')+WB.SheetNames.map((n,i)=>`<option value="${i}">${esc(n)}</option>`).join("");
+    $("sheet").value=ns>1?"all":"0";
+    $("sheetrow").hidden=ns<2;
+    $("impmsg").textContent="Đã mở: "+f.name;
+    $("imp").hidden=false;
+    loadSheet();
+  };
+  r.readAsArrayBuffer(f);
+};
+function loadSheet(){
+  const nm=WB.SheetNames,sv=$("sheet").value;
+  ROWS=[];
+  (sv==="all"?nm:[nm[+sv]]).forEach(n=>{ROWS=ROWS.concat(XLSX.utils.sheet_to_json(WB.Sheets[n],{header:1,raw:true,defval:null,blankrows:false}))});
+  const first=ROWS[0]||[];
+  $("hdr").checked=first.some(c=>typeof c==="string"&&isNaN(Number(c))&&!parseDate(c,false));
+  buildCols();
+}
+function buildCols(){
+  const hdr=$("hdr").checked,body=ROWS.slice(hdr?1:0),nc=Math.max(0,...ROWS.map(r=>r.length));
+  NAMES=[...Array(nc)].map((_,i)=>hdr&&ROWS[0][i]!=null&&ROWS[0][i]!==""?String(ROWS[0][i]):"Cột "+colName(i));
+  let best=-1,br=0;
+  for(let i=0;i<nc;i++){
+    const s=body.slice(0,60).map(r=>r[i]).filter(v=>v!=null);if(!s.length)continue;
+    const ok=s.filter(v=>parseDate(v,false)).length/s.length;
+    if(ok>br&&ok>=.6){br=ok;best=i}
+  }
+  $("dcol").innerHTML='<option value="-1">Không có cột ngày</option>'+NAMES.map((n,i)=>`<option value="${i}">${esc(n)}</option>`).join("");
+  $("dcol").value=best;
+  buildNums();
+}
+function buildNums(){
+  const hdr=$("hdr").checked,body=ROWS.slice(hdr?1:0),d=+$("dcol").value;
+  $("chips").innerHTML=NAMES.map((n,i)=>i===d?"":`<label class="chip"><input type="checkbox" value="${i}"${body.some(r=>r[i]!=null&&/\d/.test(String(r[i])))?" checked":""}> ${esc(n)}</label>`).join("");
+  $("daterow").hidden=d<0;
+  if(d>=0){const ks=body.map(r=>parseDate(r[d],true)).filter(Boolean).sort();$("d1").value=ks[0]||"";$("d2").value=ks[ks.length-1]||""}
+  apply();
+}
+function apply(){
+  const hdr=$("hdr").checked,body=ROWS.slice(hdr?1:0),d=+$("dcol").value;
+  const cols=[...document.querySelectorAll("#chips input:checked")].map(x=>+x.value);
+  const last2=$("mode").value==="last2",f1=$("d1").value,f2=$("d2").value;
+  let items=[],nodate=0,last=null;
+  body.forEach((r,idx)=>{
+    let k="#"+(idx+1);
+    if(d>=0){
+      const raw=r[d];k=parseDate(raw,true);
+      if(!k&&(raw==null||raw==="")&&last)k=last;
+      if(!k){if(r.some(v=>v!=null))nodate++;return}
+      last=k;
+      if((f1&&k<f1)||(f2&&k>f2))return;
+    }
+    const toks=[];
+    cols.forEach(c=>{
+      const v=r[c];if(v==null)return;
+      const s=typeof v==="number"?String(Math.trunc(v)):String(v);
+      (s.match(/\d+/g)||[]).forEach(t=>toks.push(last2?Number(t.slice(-2)):Number(t)));
+    });
+    if(toks.length)items.push({k,toks});
+  });
+  if(d>=0)items.sort((a,b)=>a.k<b.k?-1:a.k>b.k?1:0);
+  const vals=items.flatMap(i=>i.toks);
+  if(last2){$("min").value=0;$("max").value=99}
+  else if(vals.length){const mx=vals.reduce((a,b)=>b>a?b:a,0);if(mx>+$("max").value)$("max").value=mx}
+  const g=new Map();items.forEach(i=>g.set(i.k,(g.get(i.k)||[]).concat(i.toks)));
+  $("data").value=[...g.values()].map(t=>t.map(x=>last2?pad(x,2):x).join(" ")).join("\n");
+  const ns=$("sheet").value==="all"?WB.SheetNames.length:1;
+  $("sum").textContent=`Đọc ${body.length} dòng từ ${ns} trang tính. Đã lấy ${vals.length} số từ ${g.size} ${d>=0?"ngày":"dòng"}.`+(nodate?` Bỏ qua ${nodate} dòng không đọc được ngày.`:"");
+  const lab=k=>k[0]==="#"?"Dòng "+k.slice(1):k.split("-").reverse().join("/");
+  $("prev").innerHTML='<tr><th>'+(d>=0?"Ngày":"Dòng")+'</th><th>Các số (7 mục gần nhất)</th></tr>'+
+    [...g.keys()].slice(-7).reverse().map(k=>{const t=g.get(k);return`<tr><td>${lab(k)}</td><td>${t.slice(0,12).map(x=>last2?pad(x,2):x).join(" ")}${t.length>12?" …":""}</td></tr>`}).join("");
+  analyze();
+}
+$("sheet").onchange=loadSheet;
+$("hdr").onchange=buildCols;
+$("dcol").onchange=buildNums;
+$("chips").onchange=apply;
+$("mode").onchange=()=>{if($("mode").value==="last2"){$("min").value=0;$("max").value=99}ROWS.length?apply():analyze()};
+$("d1").onchange=apply;
+$("d2").onchange=apply;
+$("cm").onchange=analyze;
+
+/* Kiểm chứng phương pháp theo từng ngày (walk-forward) */
+function rkOf(a){const o=a.map((_,i)=>i).sort((x,y)=>a[y]-a[x]||x-y),r=Array(a.length);o.forEach((j,p)=>r[j]=p);return r}
+function topOf(a,N){return a.map((_,i)=>i).sort((x,y)=>a[y]-a[x]||x-y).slice(0,N)}
+function scoreMethods(past,K,lo){
+  const D=past.length,c=Array(K).fill(0),last=Array(K).fill(-1),r14=Array(K).fill(0),wv=Array(K).fill(0);let wd=0;
+  const k=past.reduce((s,a)=>s+a.length,0)/D,base=1-Math.pow(1-1/K,k),A=base*10,B=(1-base)*10;
+  past.forEach((a,i)=>{
+    const age=D-1-i,wt=Math.pow(.5,age/10);wd+=wt;
+    new Set(a).forEach(v=>{const j=v-lo;c[j]++;last[j]=i;wv[j]+=wt;if(age<14)r14[j]++});
+  });
+  const n14=Math.min(14,D);
+  return{
+    freq:c,
+    v11:c.map((x,j)=>.5*((A+x)/(A+B+D))+.3*(wv[j]/wd)+.2*(r14[j]/n14)),
+    gap:last.map(l=>D-1-l)
+  };
+}
+function backtestRun(){
+  const out=$("out"),lo=parseInt($("min").value),hi=parseInt($("max").value);
+  if(!(hi>lo)){out.innerHTML='<div class="card">Số lớn nhất phải lớn hơn số nhỏ nhất.</div>';return}
+  const K=hi-lo+1,w=String(hi).length,N=Math.max(1,Math.min(+$("topn").value||10,K-1)),T0=15;
+  const days=$("data").value.split(/\n/).map(l=>(l.match(/\d+/g)||[]).map(t=>$("mode").value==="last2"?Number(t.slice(-2)):Number(t)).filter(v=>v>=lo&&v<=hi)).filter(a=>a.length);
+  const D=days.length;
+  if(D<T0+10){out.innerHTML=`<div class="card">Kiểm chứng cần ít nhất ${T0+10} ngày, mỗi ngày một dòng. Hiện có ${D} ngày.</div>`;return}
+  const names=["Tần suất (bản của tôi)","Công thức V11","Lô gan (lâu chưa về)","Kết hợp: tần suất + V11"],M=names.length;
+  const picks=names.map(()=>[]);
+  for(let d=T0;d<D;d++){
+    const s=scoreMethods(days.slice(0,d),K,lo),rf=rkOf(s.freq),rv=rkOf(s.v11);
+    [s.freq,s.v11,s.gap,rf.map((x,i)=>-(x+rv[i]))].forEach((a,m)=>picks[m].push(topOf(a,N)));
+  }
+  const test=days.slice(T0),T=test.length;
+  const obs=picks.map(P=>P.reduce((s,pk,i)=>{const set=new Set(test[i].map(v=>v-lo));return s+pk.filter(j=>set.has(j)).length},0));
+  const rand=test.reduce((s,a)=>s+1-Math.pow(1-1/K,a.length),0)/T;
+  const total=test.reduce((s,a)=>s+a.length,0),R=Math.max(300,Math.min(3000,Math.floor(2e7/total)));
+  const ge=Array(M).fill(0),seen=new Int32Array(K);let st=0;
+  for(let r=0;r<R;r++){
+    const h=Array(M).fill(0);
+    for(let i=0;i<T;i++){
+      st++;const n=test[i].length;
+      for(let j=0;j<n;j++)seen[Math.floor(Math.random()*K)]=st;
+      for(let m=0;m<M;m++){const pk=picks[m][i];for(let q=0;q<pk.length;q++)if(seen[pk[q]]===st)h[m]++}
+    }
+    h.forEach((x,m)=>{if(x>=obs[m])ge[m]++});
+  }
+  const ps=ge.map(x=>(x+1)/(R+1)),thr=0.05/M,sig=ps.map((p,m)=>p<thr?m:-1).filter(m=>m>=0);
+  const v=sig.length
+    ?`<div class="verdict bad"><b>${sig.map(m=>names[m]).join(", ")} vượt mức ngẫu nhiên (p &lt; ${thr.toFixed(4)}).</b><br>Đây mới là dấu hiệu, chưa phải bằng chứng chắc. Hãy kiểm tra lại trên dữ liệu ngày mới, chưa dùng để chọn phương pháp.</div>`
+    :`<div class="verdict"><b>Không phương pháp nào, kể cả kết hợp, vượt mức ngẫu nhiên.</b><br>Chọn ${N} số theo các cách này không cho tỷ lệ trúng cao hơn chọn ${N} số bất kỳ.</div>`;
+  const rows=names.map((n,m)=>`<tr><td>${n}</td><td>${pct(obs[m]/(T*N))}</td><td>${pct(rand)}</td><td>${ps[m].toFixed(3)}</td></tr>`).join("");
+  const fs=scoreMethods(days,K,lo),rf=rkOf(fs.freq),rv=rkOf(fs.v11);
+  const nx=topOf(rf.map((x,i)=>-(x+rv[i])),N).map(i=>pad(i+lo,w)).join(" ");
+  out.innerHTML=`
+  <div class="card"><h2>Kiểm chứng: có cao hơn ngẫu nhiên không?</h2>${v}
+    <div class="scroll"><table><tr><th>Phương pháp</th><th>Tỷ lệ trúng</th><th>Ngẫu nhiên</th><th>p</th></tr>${rows}</table></div>
+    <p class="note">Mỗi ngày từ ngày thứ ${T0+1} trở đi, mỗi phương pháp chỉ dùng dữ liệu các ngày trước để chọn ${N} số, rồi đối chiếu với kết quả ngày đó (${T} ngày kiểm thử). Tỷ lệ trúng là phần trăm số được chọn có xuất hiện trong ngày. p tính bằng mô phỏng ${R} lần dữ liệu ngẫu nhiên. Ngưỡng ${thr.toFixed(4)} là 0,05 chia ${M} phương pháp, để tránh kết luận nhầm khi thử nhiều cách.</p></div>
+  <div class="card"><h2>${N} số của phương pháp kết hợp cho ngày kế tiếp</h2><p><b>${nx}</b></p>
+    <p class="note">Danh sách này chỉ đáng tham khảo nếu bảng trên cho thấy phương pháp vượt mức ngẫu nhiên. Nếu không, nó không có lợi thế so với ${N} số bất kỳ.</p></div>`;
+}
+$("bt").onclick=backtestRun;
+
+
+function analyzeDays(lo,hi){
+  const out=$("out"),K=hi-lo+1,w=String(hi).length;
+  const days=$("data").value.split(/\n/).map(l=>(l.match(/\d+/g)||[]).map(t=>$("mode").value==="last2"?Number(t.slice(-2)):Number(t)).filter(v=>v>=lo&&v<=hi)).filter(a=>a.length);
+  const D=days.length;
+  if(D<2){out.innerHTML='<div class="card">Chế độ này cần ít nhất 2 ngày, mỗi ngày một dòng. Hãy nhập từ Excel hoặc dán mỗi ngày một dòng.</div>';return}
+  const q=1-1/K,pd=days.map(a=>1-Math.pow(q,a.length));
+  const E=pd.reduce((s,x)=>s+x,0),V=pd.reduce((s,x)=>s+x*(1-x),0),pe=E/D;
+  const c=Array(K).fill(0);days.forEach(a=>new Set(a).forEach(v=>c[v-lo]++));
+  const stat=x=>{let s=0;for(let i=0;i<K;i++)s+=(x[i]-E)**2/V;return s};
+  const obs=stat(c),total=days.reduce((s,a)=>s+a.length,0);
+  const R=Math.max(300,Math.min(3000,Math.floor(2e7/total)));
+  const cs=new Int32Array(K),seen=new Int32Array(K);let st=0,ge=0;
+  for(let r=0;r<R;r++){
+    cs.fill(0);
+    for(const a of days){st++;for(let j=0;j<a.length;j++){const v=Math.floor(Math.random()*K);if(seen[v]!==st){seen[v]=st;cs[v]++}}}
+    if(stat(cs)>=obs-1e-9)ge++;
+  }
+  const p=(ge+1)/(R+1),ok=p>=0.05;
+  const order=c.map((_,i)=>i).sort((a,b)=>c[b]-c[a]||a-b),mx=Math.max(...c);
+  const v=ok
+    ?`<div class="verdict"><b>Không có bằng chứng số nào xuất hiện nhiều ngày hơn bình thường.</b><br>Chênh lệch nằm trong mức dao động ngẫu nhiên (p ≈ ${p.toFixed(3)}). Mỗi số kỳ vọng có mặt trong khoảng ${pct(pe)} số ngày.</div>`
+    :`<div class="verdict bad"><b>Có dấu hiệu lệch so với ngẫu nhiên (p ≈ ${p.toFixed(4)}).</b><br>Hãy kiểm tra lại dữ liệu và thử với nhiều ngày hơn trước khi kết luận.</div>`;
+  const warn=D<20?`<p class="note">Lưu ý: mới có ${D} ngày, quá ít nên kết quả kém tin cậy.</p>`:"";
+  const bars=c.map((x,i)=>`<i class="${order.slice(0,3).includes(i)&&x>E?"hot":""}" style="height:${mx?x/mx*100:0}%" title="${pad(i+lo,w)}: ${x} ngày"></i>`).join("");
+  const row=i=>{const[a,b]=wilson(c[i],D);return`<tr><td><b>${pad(i+lo,w)}</b></td><td>${c[i]}</td><td>${pct(c[i]/D)}</td><td>${pct(a)} – ${pct(b)}</td></tr>`};
+  const head='<tr><th>Số</th><th>Số ngày</th><th>Tỷ lệ ngày</th><th>Khoảng tin cậy 95%</th></tr>';
+  out.innerHTML=`
+  <div class="card"><h2>Kết luận (đếm theo ngày)</h2>${v}
+    <div class="stats">
+      <div><b>${D}</b><span>ngày có dữ liệu</span></div>
+      <div><b>${E.toFixed(2)}</b><span>số ngày kỳ vọng mỗi số xuất hiện</span></div>
+      <div><b>${pct(pe)}</b><span>tỷ lệ ngày kỳ vọng</span></div>
+      <div><b>${p.toFixed(4)}</b><span>giá trị p (mô phỏng ${R} lần)</span></div>
+    </div>${warn}</div>
+  <div class="card"><h2>Số ngày xuất hiện của từng số</h2>
+    <div class="scroll"><div class="chart" style="min-width:${K*7}px">${bars}<span class="exp" style="bottom:${mx?E/mx*100:0}%"></span></div></div>
+    <p class="note">Mỗi số chỉ tính 1 lần mỗi ngày dù ra trùng. Đường nét đứt là số ngày kỳ vọng nếu ngẫu nhiên hoàn toàn.</p></div>
+  <div class="card"><h2>5 số có mặt nhiều ngày nhất</h2><div class="scroll"><table>${head}${order.slice(0,5).map(row).join("")}</table></div></div>
+  <div class="card"><h2>5 số có mặt ít ngày nhất</h2><div class="scroll"><table>${head}${order.slice(-5).reverse().map(row).join("")}</table></div>
+    <p class="note">Khoảng tin cậy chứa mức ${pct(pe)} thì số đó chưa khác biệt rõ với mức trung bình.</p></div>`;
+}
+$("demo").onclick=()=>{
+  const lo=parseInt($("min").value),hi=parseInt($("max").value);
+  if(!(hi>lo))return;
+  const L=[];for(let d=0;d<30;d++){const a=[];for(let i=0;i<27;i++)a.push(pad(lo+Math.floor(Math.random()*(hi-lo+1)),String(hi).length));L.push(a.join(" "))}
+  $("data").value=L.join("\n");analyze();
+};
+</script>
+</body>
+</html>
