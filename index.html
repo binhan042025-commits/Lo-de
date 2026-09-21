@@ -172,7 +172,7 @@ $("file").onchange=e=>{
     catch(err){$("impmsg").textContent="Không đọc được file. Hãy dùng .xlsx, .xls hoặc .csv.";return}
     const ns=WB.SheetNames.length;
     $("sheet").innerHTML=(ns>1?'<option value="all">Tất cả trang tính</option>':'')+WB.SheetNames.map((n,i)=>`<option value="${i}">${esc(n)}</option>`).join("");
-    $("sheet").value=ns>1?"all":"0";
+    $("sheet").value=ns>1?String(bestSheet()):"0";
     $("sheetrow").hidden=ns<2;
     $("impmsg").textContent="Đã mở: "+f.name;
     $("imp").hidden=false;
@@ -180,6 +180,16 @@ $("file").onchange=e=>{
   };
   r.readAsArrayBuffer(f);
 };
+function sheetRows(n){return XLSX.utils.sheet_to_json(WB.Sheets[n],{header:1,raw:true,defval:null,blankrows:false})}
+function bestSheet(){
+  let bi=0,bs=-1;
+  WB.SheetNames.forEach((n,i)=>{
+    const rs=sheetRows(n),nc=Math.max(0,...rs.map(r=>r.length));let sc=0;
+    for(let c=0;c<nc;c++){let h=0;rs.forEach(r=>{if(parseDate(r[c],false))h++});if(h>sc)sc=h}
+    if(sc>bs){bs=sc;bi=i}
+  });
+  return bi;
+}
 function loadSheet(){
   const nm=WB.SheetNames,sv=$("sheet").value;
   ROWS=[];
@@ -203,7 +213,10 @@ function buildCols(){
 }
 function buildNums(){
   const hdr=$("hdr").checked,body=ROWS.slice(hdr?1:0),d=+$("dcol").value;
-  $("chips").innerHTML=NAMES.map((n,i)=>i===d?"":`<label class="chip"><input type="checkbox" value="${i}"${body.some(r=>r[i]!=null&&/\d/.test(String(r[i])))?" checked":""}> ${esc(n)}</label>`).join("");
+  const tk=NAMES.map((_,i)=>{const a=body.map(r=>r[i]).filter(v=>v!=null&&v!=="");return a.length?a.reduce((t,v)=>t+(v instanceof Date?0:typeof v==="number"?1:(String(v).match(/\d+/g)||[]).length),0)/a.length:0});
+  const multi=tk.some((x,i)=>i!==d&&x>=3);
+  const on=i=>i!==d&&(multi?tk[i]>=3:tk[i]>0);
+  $("chips").innerHTML=NAMES.map((n,i)=>i===d?"":`<label class="chip"><input type="checkbox" value="${i}"${on(i)?" checked":""}> ${esc(n)}</label>`).join("");
   $("daterow").hidden=d<0;
   if(d>=0){const ks=body.map(r=>parseDate(r[d],true)).filter(Boolean).sort();$("d1").value=ks[0]||"";$("d2").value=ks[ks.length-1]||""}
   apply();
