@@ -85,6 +85,7 @@ input[type=file]{padding:8px}
   <div class="field"><label for="topn">Số chọn mỗi ngày (khi kiểm chứng)</label><input id="topn" type="number" value="10" min="1" max="50"></div>
   <div class="btns">
     <button class="pri" id="go">Phân tích</button>
+    <button class="sec" id="fw">Khung 10 nhóm (100 điểm)</button>
     <button class="sec" id="bt">Kiểm chứng các phương pháp</button>
     <button class="sec" id="demo">Tạo thử 30 ngày ngẫu nhiên (27 số/ngày)</button>
   </div>
@@ -282,6 +283,96 @@ function scoreMethods(past,K,lo){
     gap:last.map(l=>D-1-l)
   };
 }
+function rank01(arr,key,higherBetter){
+  const valid=arr.filter(r=>isFinite(r[key]));
+  if(!valid.length)return arr.map(()=>0);
+  return arr.map(r=>{
+    if(!isFinite(r[key]))return 0;
+    let cnt=0;valid.forEach(o=>{if(higherBetter?o[key]<=r[key]:o[key]>=r[key])cnt++});
+    return cnt/valid.length;
+  });
+}
+function clamp01(x){return Math.max(0,Math.min(1,isFinite(x)?x:0))}
+function frameworkScores(days,K,lo){
+  const D=days.length;
+  const pres=days.map(a=>new Set(a.map(v=>v-lo).filter(v=>v>=0&&v<K)));
+  const kAvg=days.reduce((s,a)=>s+a.length,0)/D,expOnce=1-Math.pow(1-1/K,kAvg);
+  const appear=Array.from({length:K},()=>[]);
+  for(let d=0;d<D;d++)pres[d].forEach(j=>appear[j].push(d));
+  const rec=[];
+  for(let j=0;j<K;j++){
+    const ap=appear[j],n=ap.length,gaps=[];
+    for(let i=1;i<n;i++)gaps.push(ap[i]-ap[i-1]);
+    const avgGap=gaps.length?gaps.reduce((a,b)=>a+b,0)/gaps.length:NaN;
+    const maxGap=gaps.length?Math.max(...gaps):NaN;
+    const variance=gaps.length>1?gaps.reduce((s,g)=>s+(g-avgGap)**2,0)/gaps.length:NaN;
+    const std=isFinite(variance)?Math.sqrt(variance):NaN;
+    const cv=(isFinite(std)&&avgGap>0)?std/avgGap:NaN;
+    const curGap=n?D-1-ap[n-1]:D;
+    const freqN=N=>{let c=0;for(let d=Math.max(0,D-N);d<D;d++)if(pres[d].has(j))c++;return c};
+    rec.push({j,n,gaps,avgGap,maxGap,std,cv,curGap,f5:freqN(5),f10:freqN(10),f20:freqN(20),f30:freqN(30),f60:freqN(60)});
+  }
+  const base5=1-Math.pow(1-expOnce,5);
+  rec.forEach(r=>{
+    const ap=appear[r.j];let hits=0,tot=0,ptr=-1;
+    for(let d=0;d<D-1;d++){
+      while(ptr+1<ap.length&&ap[ptr+1]<d)ptr++;
+      const gapAtD=d-(ptr>=0?ap[ptr]:-1)-1;
+      if(gapAtD>=0&&Math.abs(gapAtD-r.curGap)<=1){
+        tot++;let hit=false;
+        for(let e=d;e<Math.min(D,d+5);e++)if(pres[e].has(r.j)){hit=true;break}
+        if(hit)hits++;
+      }
+    }
+    r.g7n=tot;r.g7rate=tot?hits/tot:NaN;
+    r.rateComb=.35*(r.f10/Math.min(10,D))+.25*(r.f20/Math.min(20,D))+.25*(r.f30/Math.min(30,D))+.15*(r.f60/Math.min(60,D));
+    r.rate5=r.f5/Math.min(5,D);
+  });
+  const g1r=rank01(rec,'rateComb',true),g2r=rank01(rec,'n',true),g4r=rank01(rec,'cv',false),g5r=rank01(rec,'rate5',true);
+  rec.forEach((r,i)=>{
+    r.G1=15*g1r[i];
+    r.G2=15*g2r[i];
+    r.G3=r.gaps.length?15*Math.exp(-Math.abs(r.curGap-r.avgGap)/Math.max(r.avgGap,1)):0;
+    r.G4=r.gaps.length>=2?15*g4r[i]:0;
+    r.G5=10*g5r[i];
+    r.G6=r.gaps.length?10*(1-clamp01((r.curGap-r.avgGap)/Math.max(r.maxGap-r.avgGap,1))):5;
+    r.G7=r.g7n>=3?15*clamp01((r.g7rate-base5)/Math.max(1-base5,1e-9)):0;
+    const v=r.j+lo,s=String(v).padStart(2,'0'),mv=+(s[1]+s[0]),mj=mv-lo;
+    if(K===100&&mj>=0&&mj<K&&mj!==r.j){
+      let hits=0,tot=0;
+      appear[r.j].forEach(d=>{tot++;for(let e=d;e<Math.min(D,d+3);e++)if(pres[e].has(mj)){hits++;break}});
+      r.G8=tot>=3?5*clamp01(((hits/tot)-base5*.6)/Math.max(1-base5*.6,1e-9)):0;
+    }else r.G8=0;
+    r.total=r.G1+r.G2+r.G3+r.G4+r.G5+r.G6+r.G7+r.G8;
+  });
+  return{rec,D};
+}
+function layerize(rec){
+  rec.forEach(r=>{r.badA=(r.gaps.length>=2&&r.curGap>2.5*r.avgGap)||(isFinite(r.cv)&&r.cv>0.9)||(r.n<3)||(r.f5===0&&r.f10<=1)});
+  const ok=rec.filter(r=>!r.badA).sort((a,b)=>b.total-a.total);
+  const dSet=new Set(ok.filter(r=>r.total>=60).slice(0,5).map(r=>r.j));
+  rec.forEach(r=>{r.layer=r.badA?'A':dSet.has(r.j)?'D':(r.total>=50?'C':'B')});
+  return rec;
+}
+function frameworkRun(){
+  const out=$("out"),lo=parseInt($("min").value),hi=parseInt($("max").value);
+  if(!(hi>lo)){out.innerHTML='<div class="card">Số lớn nhất phải lớn hơn số nhỏ nhất.</div>';return}
+  const K=hi-lo+1,w=String(hi).length;
+  const days=$("data").value.split(/\n/).map(l=>(l.match(/\d+/g)||[]).map(t=>$("mode").value==="last2"?Number(t.slice(-2)):Number(t)).filter(v=>v>=lo&&v<=hi)).filter(a=>a.length);
+  if(days.length<20){out.innerHTML=`<div class="card">Khung này cần ít nhất 20 ngày, mỗi ngày một dòng. Hiện có ${days.length} ngày.</div>`;return}
+  const{rec}=frameworkScores(days,K,lo);layerize(rec);
+  const sorted=[...rec].sort((a,b)=>b.total-a.total),dList=sorted.filter(r=>r.layer==='D');
+  const lab=n=>pad(n+lo,w);
+  const rows=sorted.map(r=>`<tr><td><b>${lab(r.j)}</b></td><td>${r.total.toFixed(0)}</td><td>${r.layer}</td><td>${r.n}</td><td>${isFinite(r.avgGap)?r.avgGap.toFixed(1):"—"}</td><td>${r.curGap}</td><td>${r.G7.toFixed(0)}${r.g7n?" ("+r.g7n+" lần)":""}</td></tr>`).join("");
+  out.innerHTML=`
+  <div class="card"><h2>Khung phân tích 10 nhóm — bảng điểm 100</h2>
+    <p class="note">Điểm càng cao nghĩa là số đó khớp nhiều tiêu chí trong khung này trên dữ liệu đã qua. Đây vẫn là suy luận từ quá khứ, không phải xác suất thật của kỳ tới. Hãy dùng nút "Kiểm chứng các phương pháp" để xem khung này có thật sự vượt mức ngẫu nhiên trên dữ liệu của bạn hay không.</p>
+    ${dList.length?`<div class="verdict"><b>Lớp D — ứng viên cuối (${dList.length} số):</b> ${dList.map(r=>lab(r.j)).join(", ")}</div>`:'<div class="verdict bad"><b>Chưa có số nào đủ điều kiện vào Lớp D ở dữ liệu hiện tại.</b></div>'}
+    <div class="scroll"><table><tr><th>Số</th><th>Điểm</th><th>Lớp</th><th>Số lần về</th><th>Chu kỳ TB (ngày)</th><th>Đang gan (ngày)</th><th>Điểm backtest tương đồng</th></tr>${rows}</table></div>
+    <p class="note">Lớp A: loại ngay (gan bất thường, chu kỳ quá thất thường hoặc quá ít dữ liệu). Lớp D: điểm ≥ 60 và cao nhất, tối đa 5 số. Thang điểm: Tần suất 15, Chu kỳ 15, Ngày hiện tại phù hợp chu kỳ 15, Độ ổn định 15, Nhịp gần đây 10, Lịch sử gan 10, Backtest tương đồng 15, Đảo số 5.</p>
+  </div>`;
+}
+$("fw").onclick=frameworkRun;
 function backtestRun(){
   const out=$("out"),lo=parseInt($("min").value),hi=parseInt($("max").value);
   if(!(hi>lo)){out.innerHTML='<div class="card">Số lớn nhất phải lớn hơn số nhỏ nhất.</div>';return}
@@ -289,11 +380,16 @@ function backtestRun(){
   const days=$("data").value.split(/\n/).map(l=>(l.match(/\d+/g)||[]).map(t=>$("mode").value==="last2"?Number(t.slice(-2)):Number(t)).filter(v=>v>=lo&&v<=hi)).filter(a=>a.length);
   const D=days.length;
   if(D<T0+10){out.innerHTML=`<div class="card">Kiểm chứng cần ít nhất ${T0+10} ngày, mỗi ngày một dòng. Hiện có ${D} ngày.</div>`;return}
-  const names=["Tần suất (bản của tôi)","Công thức V11","Lô gan (lâu chưa về)","Kết hợp: tần suất + V11"],M=names.length;
+  const names=["Tần suất (bản của tôi)","Công thức V11","Lô gan (lâu chưa về)","Kết hợp: tần suất + V11","Khung 10 nhóm (100 điểm)"],M=names.length;
   const picks=names.map(()=>[]);
   for(let d=T0;d<D;d++){
-    const s=scoreMethods(days.slice(0,d),K,lo),rf=rkOf(s.freq),rv=rkOf(s.v11);
+    const hist=days.slice(0,d);
+    const s=scoreMethods(hist,K,lo),rf=rkOf(s.freq),rv=rkOf(s.v11);
     [s.freq,s.v11,s.gap,rf.map((x,i)=>-(x+rv[i]))].forEach((a,m)=>picks[m].push(topOf(a,N)));
+    const{rec}=frameworkScores(hist,K,lo);layerize(rec);
+    let ok=rec.filter(r=>!r.badA).sort((a,b)=>b.total-a.total).map(r=>r.j);
+    if(ok.length<N){const all=[...rec].sort((a,b)=>b.total-a.total).map(r=>r.j);for(const j of all){if(!ok.includes(j))ok.push(j);if(ok.length>=N)break}}
+    picks[4].push(ok.slice(0,N));
   }
   const test=days.slice(T0),T=test.length;
   const obs=picks.map(P=>P.reduce((s,pk,i)=>{const set=new Set(test[i].map(v=>v-lo));return s+pk.filter(j=>set.has(j)).length},0));
