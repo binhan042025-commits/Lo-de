@@ -54,7 +54,7 @@ input[type=file]{padding:8px}
 </head>
 <body>
 <main>
-<h1>Máy tính xác suất thống kê</h1>
+<h1>Máy tính xác suất thống kê <span style="font-size:.7rem;font-weight:600;background:var(--acc);color:var(--bg);border-radius:6px;padding:2px 8px;vertical-align:middle">v6</span></h1>
 <p class="sub">Dán dữ liệu các kỳ trước, công cụ sẽ đo tần suất và kiểm định xem có số nào thực sự có xác suất cao hơn hay chỉ là dao động ngẫu nhiên.</p>
 
 <div class="card">
@@ -314,17 +314,14 @@ function frameworkScores(days,K,lo){
   }
   const base5=1-Math.pow(1-expOnce,5);
   rec.forEach(r=>{
-    const ap=appear[r.j];let hits=0,tot=0,ptr=-1;
-    for(let d=0;d<D-1;d++){
-      while(ptr+1<ap.length&&ap[ptr+1]<d)ptr++;
-      const gapAtD=d-(ptr>=0?ap[ptr]:-1)-1;
-      if(gapAtD>=0&&Math.abs(gapAtD-r.curGap)<=1){
-        tot++;let hit=false;
-        for(let e=d;e<Math.min(D,d+5);e++)if(pres[e].has(r.j)){hit=true;break}
-        if(hit)hits++;
-      }
-    }
-    r.g7n=tot;r.g7rate=tot?hits/tot:NaN;
+    const sim=r.gaps.filter(g=>g>r.curGap),extra=sim.map(g=>g-r.curGap);
+    const cntE={};extra.forEach(e=>cntE[e]=(cntE[e]||0)+1);
+    let modeExtra=NaN,modeN=0;Object.keys(cntE).forEach(k=>{if(cntE[k]>modeN){modeN=cntE[k];modeExtra=+k}});
+    const avgExtra=extra.length?extra.reduce((a,b)=>a+b,0)/extra.length:NaN;
+    const varE=extra.length>1?extra.reduce((s,e)=>s+(e-avgExtra)**2,0)/extra.length:NaN;
+    const stdExtra=isFinite(varE)?Math.sqrt(varE):NaN;
+    const hit15=extra.length?extra.filter(e=>e>=1&&e<=5).length/extra.length:NaN;
+    r.g7n=sim.length;r.g7extra=extra;r.g7rate=hit15;r.g7mode=modeExtra;r.g7avg=avgExtra;r.g7std=stdExtra;
     r.rateComb=.35*(r.f10/Math.min(10,D))+.25*(r.f20/Math.min(20,D))+.25*(r.f30/Math.min(30,D))+.15*(r.f60/Math.min(60,D));
     r.rate5=r.f5/Math.min(5,D);
   });
@@ -345,7 +342,7 @@ function frameworkScores(days,K,lo){
     }else r.G8=0;
     r.total=r.G1+r.G2+r.G3+r.G4+r.G5+r.G6+r.G7+r.G8;
   });
-  return{rec,D};
+  return{rec,D,base5};
 }
 function layerize(rec){
   rec.forEach(r=>{r.badA=(r.gaps.length>=2&&r.curGap>2.5*r.avgGap)||(isFinite(r.cv)&&r.cv>0.9)||(r.n<3)||(r.f5===0&&r.f10<=1)});
@@ -360,17 +357,57 @@ function frameworkRun(){
   const K=hi-lo+1,w=String(hi).length;
   const days=$("data").value.split(/\n/).map(l=>(l.match(/\d+/g)||[]).map(t=>$("mode").value==="last2"?Number(t.slice(-2)):Number(t)).filter(v=>v>=lo&&v<=hi)).filter(a=>a.length);
   if(days.length<20){out.innerHTML=`<div class="card">Khung này cần ít nhất 20 ngày, mỗi ngày một dòng. Hiện có ${days.length} ngày.</div>`;return}
-  const{rec}=frameworkScores(days,K,lo);layerize(rec);
+  const{rec,base5}=frameworkScores(days,K,lo);layerize(rec);
   const sorted=[...rec].sort((a,b)=>b.total-a.total),dList=sorted.filter(r=>r.layer==='D');
   const lab=n=>pad(n+lo,w);
-  const rows=sorted.map(r=>`<tr><td><b>${lab(r.j)}</b></td><td>${r.total.toFixed(0)}</td><td>${r.layer}</td><td>${r.n}</td><td>${isFinite(r.avgGap)?r.avgGap.toFixed(1):"—"}</td><td>${r.curGap}</td><td>${r.G7.toFixed(0)}${r.g7n?" ("+r.g7n+" lần)":""}</td></tr>`).join("");
+  const rows=sorted.map(r=>`<tr><td><b>${lab(r.j)}</b></td><td>${r.total.toFixed(0)}</td><td>${r.layer}</td><td>${r.n}</td><td>${isFinite(r.avgGap)?r.avgGap.toFixed(1):"—"}</td><td>${r.curGap}</td><td>${r.g7n?pct(r.g7rate)+" ("+r.g7n+" lần)":"—"}</td></tr>`).join("");
   out.innerHTML=`
   <div class="card"><h2>Khung phân tích 10 nhóm — bảng điểm 100</h2>
     <p class="note">Điểm càng cao nghĩa là số đó khớp nhiều tiêu chí trong khung này trên dữ liệu đã qua. Đây vẫn là suy luận từ quá khứ, không phải xác suất thật của kỳ tới. Hãy dùng nút "Kiểm chứng các phương pháp" để xem khung này có thật sự vượt mức ngẫu nhiên trên dữ liệu của bạn hay không.</p>
     ${dList.length?`<div class="verdict"><b>Lớp D — ứng viên cuối (${dList.length} số):</b> ${dList.map(r=>lab(r.j)).join(", ")}</div>`:'<div class="verdict bad"><b>Chưa có số nào đủ điều kiện vào Lớp D ở dữ liệu hiện tại.</b></div>'}
-    <div class="scroll"><table><tr><th>Số</th><th>Điểm</th><th>Lớp</th><th>Số lần về</th><th>Chu kỳ TB (ngày)</th><th>Đang gan (ngày)</th><th>Điểm backtest tương đồng</th></tr>${rows}</table></div>
-    <p class="note">Lớp A: loại ngay (gan bất thường, chu kỳ quá thất thường hoặc quá ít dữ liệu). Lớp D: điểm ≥ 60 và cao nhất, tối đa 5 số. Thang điểm: Tần suất 15, Chu kỳ 15, Ngày hiện tại phù hợp chu kỳ 15, Độ ổn định 15, Nhịp gần đây 10, Lịch sử gan 10, Backtest tương đồng 15, Đảo số 5.</p>
+  </div>
+  <div class="card"><h2>Lọc theo gan lịch sử → ngày hồi</h2>
+    <p class="note">Chọn khoảng gan hiện tại (số ngày chưa về). Bảng liệt kê các số đang gan trong khoảng đó, kèm tỷ lệ hồi 1–5 ngày tới theo lịch sử riêng của từng số. Mức nền ngẫu nhiên cho 5 ngày là <b>${pct(base5)}</b>: chỉ khi tỷ lệ cao hơn nền và có nhiều lần tương đồng thì mới đáng chú ý.</p>
+    <div class="row"><div><label for="gmin">Gan từ (ngày)</label><input id="gmin" type="number" min="0" value="1"></div><div><label for="gmax">Đến (ngày)</label><input id="gmax" type="number" min="0" value="10"></div></div>
+    <div class="scroll" id="ganList"></div>
+  </div>
+  <div class="card"><h2>Xem chi tiết gan lịch sử → ngày hồi của 1 số</h2>
+    <div class="row"><div><label for="ganNum">Số cần xem</label><input id="ganNum" type="number" value="${lab(sorted[0].j)}"></div></div>
+    <div class="btns"><button class="sec" id="gd">Xem chi tiết</button></div>
+    <div id="ganOut"></div>
+  </div>
+  <div class="card"><h2>Bảng điểm đầy đủ</h2>
+    <div class="scroll"><table><tr><th>Số</th><th>Điểm</th><th>Lớp</th><th>Số lần về</th><th>Chu kỳ TB (ngày)</th><th>Đang gan (ngày)</th><th>Tỷ lệ hồi 1–5 ngày*</th></tr>${rows}</table></div>
+    <p class="note">*Trong các lần trước số này từng gan tới mức hiện tại trở lên, tỷ lệ nó hồi thêm 1–5 ngày sau đó. Số vừa về (gan 0 ngày) thường hiện tỷ lệ cao chỉ vì đa số khoảng cách giữa hai lần về vốn ngắn, gần với mức nền. Lớp A: loại ngay. Lớp D: điểm ≥ 60 và cao nhất, tối đa 5 số. Thang điểm: Tần suất 15, Chu kỳ 15, Ngày hiện tại phù hợp chu kỳ 15, Độ ổn định 15, Nhịp gần đây 10, Lịch sử gan 10, Gan lịch sử → ngày hồi 15, Đảo số 5.</p>
   </div>`;
+  const drawGan=()=>{
+    const g1=+$("gmin").value||0,g2=+$("gmax").value||0;
+    const L=rec.filter(r=>r.curGap>=g1&&r.curGap<=g2&&r.gaps.length).sort((x,y)=>(isFinite(y.g7rate)?y.g7rate:-1)-(isFinite(x.g7rate)?x.g7rate:-1)||y.g7n-x.g7n);
+    $("ganList").innerHTML=L.length?`<table><tr><th>Số</th><th>Đang gan</th><th>Lần tương đồng</th><th>Hồi 1–5 ngày</th><th>Mốc hồi thêm</th><th>Độ lệch</th></tr>${L.map(r=>`<tr><td><b>${lab(r.j)}</b></td><td>${r.curGap}</td><td>${r.g7n}</td><td>${r.g7n?pct(r.g7rate):"—"}${r.g7n&&r.g7n<5?" *":""}</td><td>${isFinite(r.g7mode)?"+"+r.g7mode+" ngày":"—"}</td><td>${isFinite(r.g7std)?r.g7std.toFixed(1):"—"}</td></tr>`).join("")}</table><p class="note">* dưới 5 lần tương đồng, tỷ lệ chưa đáng tin.</p>`:'<p class="note">Không có số nào đang gan trong khoảng này. Với 30 ngày dữ liệu, hầu hết số chỉ gan vài ngày; hãy thử khoảng nhỏ hơn hoặc nạp thêm ngày.</p>';
+  };
+  $("gmin").oninput=drawGan;$("gmax").oninput=drawGan;drawGan();
+  $("gd").onclick=()=>ganDetail(rec,+$("ganNum").value,lo,w);
+}
+function ganDetail(rec,num,lo,w){
+  const box=$("ganOut"),j=num-lo,r=rec.find(x=>x.j===j);
+  if(!r){box.innerHTML=`<p class="note">Số ${pad(num,w)} nằm ngoài khoảng đang phân tích.</p>`;return}
+  const lab=pad(num,w);
+  if(!r.gaps.length){box.innerHTML=`<p class="note">Số ${lab} chưa có đủ 2 lần về để tính chu kỳ gan.</p>`;return}
+  const glist=r.gaps.join(", ");
+  let body;
+  if(r.g7n<3){
+    body=`<p class="note">Số ${lab} đang gan <b>${r.curGap}</b> ngày. Toàn bộ lịch sử gan: ${glist} ngày. Chỉ có ${r.g7n} lần trước đây từng gan tới mức này trở lên — chưa đủ để tính tỷ lệ hồi đáng tin (cần ít nhất 3 lần).</p>`;
+  }else{
+    body=`
+    <div class="stats">
+      <div><b>${r.curGap}</b><span>đang gan (ngày)</span></div>
+      <div><b>${r.g7n}</b><span>lần trước từng gan ≥ ${r.curGap} ngày</span></div>
+      <div><b>${pct(r.g7rate)}</b><span>tỷ lệ hồi thêm 1–5 ngày sau đó</span></div>
+      <div><b>${isFinite(r.g7mode)?"+"+r.g7mode:"—"}</b><span>mốc hồi thêm phổ biến nhất (ngày)</span></div>
+    </div>
+    <p class="note">Toàn bộ lịch sử gan của số ${lab}: ${glist} ngày. Trong ${r.g7n} lần từng đạt mức ${r.curGap} ngày trở lên, số ngày hồi thêm sau đó là: ${r.g7extra.join(", ")} (trung bình ${r.g7avg.toFixed(1)} ngày, độ lệch ${isFinite(r.g7std)?r.g7std.toFixed(1):"—"} ngày — lệch càng nhỏ thì mốc hồi càng ổn định).</p>`;
+  }
+  box.innerHTML=body;
 }
 $("fw").onclick=frameworkRun;
 function backtestRun(){
