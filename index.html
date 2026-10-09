@@ -54,7 +54,7 @@ input[type=file]{padding:8px}
 </head>
 <body>
 <main>
-<h1>Máy tính xác suất thống kê <span style="font-size:.7rem;font-weight:600;background:var(--acc);color:var(--bg);border-radius:6px;padding:2px 8px;vertical-align:middle">v6</span></h1>
+<h1>Máy tính xác suất thống kê <span style="font-size:.7rem;font-weight:600;background:var(--acc);color:var(--bg);border-radius:6px;padding:2px 8px;vertical-align:middle">v8</span></h1>
 <p class="sub">Dán dữ liệu các kỳ trước, công cụ sẽ đo tần suất và kiểm định xem có số nào thực sự có xác suất cao hơn hay chỉ là dao động ngẫu nhiên.</p>
 
 <div class="card">
@@ -103,7 +103,7 @@ function gammaQ(a,x){
   for(let i=1;i<500;i++){const an=-i*(i-a);b+=2;d=an*d+b;if(Math.abs(d)<1e-300)d=1e-300;c=b+an/c;if(Math.abs(c)<1e-300)c=1e-300;d=1/d;const dl=d*c;h*=dl;if(Math.abs(dl-1)<1e-12)break}
   return Math.exp(-x+a*Math.log(x)-g)*h;
 }
-function wilson(k,n){const z=1.96,p=k/n,d=1+z*z/n,c=p+z*z/(2*n),m=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n));return[(c-m)/d,(c+m)/d]}
+function wilson(k,n){const z=1.96,p=k/n,d=1+z*z/n,c=p+z*z/(2*n),m=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n));return[Math.max(0,(c-m)/d),Math.min(1,(c+m)/d)]}
 const pct=x=>(x*100).toFixed(2)+"%";
 const pad=(v,w)=>String(v).padStart(w,"0");
 
@@ -308,9 +308,9 @@ function frameworkScores(days,K,lo){
     const variance=gaps.length>1?gaps.reduce((s,g)=>s+(g-avgGap)**2,0)/gaps.length:NaN;
     const std=isFinite(variance)?Math.sqrt(variance):NaN;
     const cv=(isFinite(std)&&avgGap>0)?std/avgGap:NaN;
-    const curGap=n?D-1-ap[n-1]:D;
+    const curGap=n?D-1-ap[n-1]:D,pos=curGap+1;
     const freqN=N=>{let c=0;for(let d=Math.max(0,D-N);d<D;d++)if(pres[d].has(j))c++;return c};
-    rec.push({j,n,gaps,avgGap,maxGap,std,cv,curGap,f5:freqN(5),f10:freqN(10),f20:freqN(20),f30:freqN(30),f60:freqN(60)});
+    rec.push({j,n,gaps,avgGap,maxGap,std,cv,curGap,pos,f5:freqN(5),f10:freqN(10),f20:freqN(20),f30:freqN(30),f60:freqN(60)});
   }
   const base5=1-Math.pow(1-expOnce,5);
   rec.forEach(r=>{
@@ -329,10 +329,10 @@ function frameworkScores(days,K,lo){
   rec.forEach((r,i)=>{
     r.G1=15*g1r[i];
     r.G2=15*g2r[i];
-    r.G3=r.gaps.length?15*Math.exp(-Math.abs(r.curGap-r.avgGap)/Math.max(r.avgGap,1)):0;
+    r.G3=r.gaps.length?15*Math.exp(-Math.abs(r.pos-r.avgGap)/Math.max(r.avgGap,1)):0;
     r.G4=r.gaps.length>=2?15*g4r[i]:0;
     r.G5=10*g5r[i];
-    r.G6=r.gaps.length?10*(1-clamp01((r.curGap-r.avgGap)/Math.max(r.maxGap-r.avgGap,1))):5;
+    r.G6=r.gaps.length?10*(1-clamp01((r.pos-r.avgGap)/Math.max(r.maxGap-r.avgGap,1))):5;
     r.G7=r.g7n>=3?15*clamp01((r.g7rate-base5)/Math.max(1-base5,1e-9)):0;
     const v=r.j+lo,s=String(v).padStart(2,'0'),mv=+(s[1]+s[0]),mj=mv-lo;
     if(K===100&&mj>=0&&mj<K&&mj!==r.j){
@@ -345,11 +345,57 @@ function frameworkScores(days,K,lo){
   return{rec,D,base5};
 }
 function layerize(rec){
-  rec.forEach(r=>{r.badA=(r.gaps.length>=2&&r.curGap>2.5*r.avgGap)||(isFinite(r.cv)&&r.cv>0.9)||(r.n<3)||(r.f5===0&&r.f10<=1)});
+  rec.forEach(r=>{r.badA=(r.gaps.length>=2&&r.pos>2.5*r.avgGap)||(isFinite(r.cv)&&r.cv>0.9)||(r.n<3)||(r.f5===0&&r.f10<=1)});
   const ok=rec.filter(r=>!r.badA).sort((a,b)=>b.total-a.total);
   const dSet=new Set(ok.filter(r=>r.total>=60).slice(0,5).map(r=>r.j));
   rec.forEach(r=>{r.layer=r.badA?'A':dSet.has(r.j)?'D':(r.total>=50?'C':'B')});
   return rec;
+}
+function sigmoid(z){return 1/(1+Math.exp(-z))}
+function featRow(r,base5){
+  return[1, r.rateComb/0.3, isFinite(r.cv)?Math.min(r.cv,2)/2:0.5,
+    (isFinite(r.avgGap)&&r.avgGap>0)?Math.min(r.pos/r.avgGap,3)/3:0.33,
+    r.rate5/0.3, isFinite(r.g7rate)?r.g7rate:base5, Math.min(r.n,30)/30];
+}
+function trainLogReg(X,y,iters,lr,l2){
+  const m=X.length,p=X[0].length,w=new Array(p).fill(0);
+  if(!m)return w;
+  for(let it=0;it<iters;it++){
+    const grad=new Array(p).fill(0);
+    for(let i=0;i<m;i++){
+      let z=0;for(let k=0;k<p;k++)z+=w[k]*X[i][k];
+      const err=sigmoid(z)-y[i];
+      for(let k=0;k<p;k++)grad[k]+=err*X[i][k];
+    }
+    for(let k=0;k<p;k++)w[k]-=lr*(grad[k]/m+(k>0?l2*w[k]:0));
+  }
+  return w;
+}
+function predictLR(w,x){let z=0;for(let k=0;k<x.length;k++)z+=w[k]*x[k];return sigmoid(z)}
+function confidenceOf(r){
+  if(r.n>=15&&r.g7n>=8)return"Cao";
+  if(r.n>=8||r.g7n>=4)return"Trung bình";
+  return"Thấp";
+}
+function stabilityOf(days,K,lo,j){
+  if(days.length<13)return null;
+  const a=frameworkScores(days,K,lo).rec.find(r=>r.j===j).total;
+  const b=frameworkScores(days.slice(0,-3),K,lo).rec.find(r=>r.j===j).total;
+  return{full:a,prev:b,delta:a-b};
+}
+function explainCard(r,lo,w,base5,days,K){
+  const lab=pad(r.j+lo,w);
+  const items=[["Tần suất 10–60 kỳ",r.G1,15],["Chu kỳ (đủ dữ liệu)",r.G2,15],["Ngày hiện tại khớp chu kỳ",r.G3,15],
+    ["Độ ổn định chu kỳ",r.G4,15],["Nhịp 5 kỳ gần đây",r.G5,10],["Lịch sử gan không bất thường",r.G6,10],
+    ["Gan lịch sử → ngày hồi",r.G7,15],["Số đảo",r.G8,5]];
+  const strong=items.filter(([,v,mx])=>v>=mx*.65).map(([n])=>n),weak=items.filter(([,v,mx])=>v<=mx*.35).map(([n])=>n);
+  const st=stabilityOf(days,K,lo,r.j);
+  const stLine=st?`Độ bền tín hiệu: điểm với dữ liệu đầy đủ ${st.full.toFixed(0)}, nếu bớt 3 ngày gần nhất còn ${st.prev.toFixed(0)} (chênh ${st.delta>=0?"+":""}${st.delta.toFixed(0)}). Chênh lệch càng nhỏ, tín hiệu càng ổn định.`:"";
+  return`<div class="card"><h2>${lab} — điểm mô hình ${r.total.toFixed(0)}/100 · độ tin cậy: ${confidenceOf(r)}</h2>
+    <p class="note"><b>Điểm mạnh:</b> ${strong.length?strong.join(", "):"không nổi bật"}</p>
+    <p class="note"><b>Điểm yếu:</b> ${weak.length?weak.join(", "):"không nổi bật"}</p>
+    <p class="note">Chu kỳ trung bình ${isFinite(r.avgGap)?r.avgGap.toFixed(1):"—"} ngày, đang ở ngày thứ ${r.pos} của chu kỳ, dựa trên ${r.n} lần về. ${r.g7n>=3?`Trong ${r.g7n} lần trước từng gan tới mức này, ${pct(r.g7rate)} số lần hồi thêm trong 1–5 ngày (mức nền ngẫu nhiên ${pct(base5)}).`:"Chưa đủ lần gan tương đồng trong lịch sử để đánh giá mục này."} ${stLine}</p>
+    <p class="note">Đây là diễn giải từ dữ liệu quá khứ, không phải xác suất thật của kỳ tới — xem "Kiểm chứng các phương pháp" để biết khung này có vượt mức ngẫu nhiên hay không.</p></div>`;
 }
 function frameworkRun(){
   const out=$("out"),lo=parseInt($("min").value),hi=parseInt($("max").value);
@@ -359,6 +405,7 @@ function frameworkRun(){
   if(days.length<20){out.innerHTML=`<div class="card">Khung này cần ít nhất 20 ngày, mỗi ngày một dòng. Hiện có ${days.length} ngày.</div>`;return}
   const{rec,base5}=frameworkScores(days,K,lo);layerize(rec);
   const sorted=[...rec].sort((a,b)=>b.total-a.total),dList=sorted.filter(r=>r.layer==='D');
+  const explainHtml=dList.map(r=>explainCard(r,lo,w,base5,days,K)).join("");
   const lab=n=>pad(n+lo,w);
   const rows=sorted.map(r=>`<tr><td><b>${lab(r.j)}</b></td><td>${r.total.toFixed(0)}</td><td>${r.layer}</td><td>${r.n}</td><td>${isFinite(r.avgGap)?r.avgGap.toFixed(1):"—"}</td><td>${r.curGap}</td><td>${r.g7n?pct(r.g7rate)+" ("+r.g7n+" lần)":"—"}</td></tr>`).join("");
   out.innerHTML=`
@@ -366,6 +413,7 @@ function frameworkRun(){
     <p class="note">Điểm càng cao nghĩa là số đó khớp nhiều tiêu chí trong khung này trên dữ liệu đã qua. Đây vẫn là suy luận từ quá khứ, không phải xác suất thật của kỳ tới. Hãy dùng nút "Kiểm chứng các phương pháp" để xem khung này có thật sự vượt mức ngẫu nhiên trên dữ liệu của bạn hay không.</p>
     ${dList.length?`<div class="verdict"><b>Lớp D — ứng viên cuối (${dList.length} số):</b> ${dList.map(r=>lab(r.j)).join(", ")}</div>`:'<div class="verdict bad"><b>Chưa có số nào đủ điều kiện vào Lớp D ở dữ liệu hiện tại.</b></div>'}
   </div>
+  ${explainHtml}
   <div class="card"><h2>Lọc theo gan lịch sử → ngày hồi</h2>
     <p class="note">Chọn khoảng gan hiện tại (số ngày chưa về). Bảng liệt kê các số đang gan trong khoảng đó, kèm tỷ lệ hồi 1–5 ngày tới theo lịch sử riêng của từng số. Mức nền ngẫu nhiên cho 5 ngày là <b>${pct(base5)}</b>: chỉ khi tỷ lệ cao hơn nền và có nhiều lần tương đồng thì mới đáng chú ý.</p>
     <div class="row"><div><label for="gmin">Gan từ (ngày)</label><input id="gmin" type="number" min="0" value="1"></div><div><label for="gmax">Đến (ngày)</label><input id="gmax" type="number" min="0" value="10"></div></div>
@@ -417,16 +465,29 @@ function backtestRun(){
   const days=$("data").value.split(/\n/).map(l=>(l.match(/\d+/g)||[]).map(t=>$("mode").value==="last2"?Number(t.slice(-2)):Number(t)).filter(v=>v>=lo&&v<=hi)).filter(a=>a.length);
   const D=days.length;
   if(D<T0+10){out.innerHTML=`<div class="card">Kiểm chứng cần ít nhất ${T0+10} ngày, mỗi ngày một dòng. Hiện có ${D} ngày.</div>`;return}
-  const names=["Tần suất (bản của tôi)","Công thức V11","Lô gan (lâu chưa về)","Kết hợp: tần suất + V11","Khung 10 nhóm (100 điểm)"],M=names.length;
+  const names=["Tần suất (bản của tôi)","Công thức V11","Lô gan (lâu chưa về)","Kết hợp: tần suất + V11","Khung 10 nhóm (100 điểm)","Hồi quy logistic (ensemble nhẹ)"],M=names.length;
   const picks=names.map(()=>[]);
+  const presAll=days.map(a=>new Set(a.map(v=>v-lo)));
+  const labelFor=e=>{const lab=new Array(K).fill(0);for(let d=e;d<Math.min(D,e+5);d++)presAll[d].forEach(j=>{if(j>=0&&j<K)lab[j]=1});return lab};
+  const featCache={};
+  const LR_START=T0+8;
   for(let d=T0;d<D;d++){
     const hist=days.slice(0,d);
     const s=scoreMethods(hist,K,lo),rf=rkOf(s.freq),rv=rkOf(s.v11);
     [s.freq,s.v11,s.gap,rf.map((x,i)=>-(x+rv[i]))].forEach((a,m)=>picks[m].push(topOf(a,N)));
-    const{rec}=frameworkScores(hist,K,lo);layerize(rec);
+    const{rec,base5}=frameworkScores(hist,K,lo);layerize(rec);
     let ok=rec.filter(r=>!r.badA).sort((a,b)=>b.total-a.total).map(r=>r.j);
     if(ok.length<N){const all=[...rec].sort((a,b)=>b.total-a.total).map(r=>r.j);for(const j of all){if(!ok.includes(j))ok.push(j);if(ok.length>=N)break}}
     picks[4].push(ok.slice(0,N));
+    featCache[d]={feats:rec.map(r=>featRow(r,base5))};
+    if(d<LR_START){
+      picks[5].push(topOf(rec.map(r=>r.rateComb),N));
+    }else{
+      const eLo=Math.max(T0,d-5-40),eHi=d-5,X=[],y=[];
+      for(let e=eLo;e<=eHi;e++){if(!featCache[e])continue;const lb=labelFor(e);for(let j=0;j<K;j++){X.push(featCache[e].feats[j]);y.push(lb[j])}}
+      const w=trainLogReg(X,y,60,0.3,0.02);
+      picks[5].push(topOf(featCache[d].feats.map(x=>predictLR(w,x)),N));
+    }
   }
   const test=days.slice(T0),T=test.length;
   const obs=picks.map(P=>P.reduce((s,pk,i)=>{const set=new Set(test[i].map(v=>v-lo));return s+pk.filter(j=>set.has(j)).length},0));
@@ -445,7 +506,7 @@ function backtestRun(){
   const ps=ge.map(x=>(x+1)/(R+1)),thr=0.05/M,sig=ps.map((p,m)=>p<thr?m:-1).filter(m=>m>=0);
   const v=sig.length
     ?`<div class="verdict bad"><b>${sig.map(m=>names[m]).join(", ")} vượt mức ngẫu nhiên (p &lt; ${thr.toFixed(4)}).</b><br>Đây mới là dấu hiệu, chưa phải bằng chứng chắc. Hãy kiểm tra lại trên dữ liệu ngày mới, chưa dùng để chọn phương pháp.</div>`
-    :`<div class="verdict"><b>Không phương pháp nào, kể cả kết hợp, vượt mức ngẫu nhiên.</b><br>Chọn ${N} số theo các cách này không cho tỷ lệ trúng cao hơn chọn ${N} số bất kỳ.</div>`;
+    :`<div class="verdict"><b>Không có bằng chứng đủ mạnh cho bất kỳ phương pháp nào, kể cả mô hình hồi quy logistic.</b><br>Trên ${T} ngày kiểm thử, chọn ${N} số theo các cách này không cho tỷ lệ trúng cao hơn chọn ${N} số bất kỳ. Mẫu càng nhỏ thì kết luận này càng dễ đổi khi có thêm dữ liệu — nếu bạn nạp thêm ngày và kết quả vẫn vậy, đó là bằng chứng chắc hơn.</div>`;
   const rows=names.map((n,m)=>`<tr><td>${n}</td><td>${pct(obs[m]/(T*N))}</td><td>${pct(rand)}</td><td>${ps[m].toFixed(3)}</td></tr>`).join("");
   const fs=scoreMethods(days,K,lo),rf=rkOf(fs.freq),rv=rkOf(fs.v11);
   const nx=topOf(rf.map((x,i)=>-(x+rv[i])),N).map(i=>pad(i+lo,w)).join(" ");
